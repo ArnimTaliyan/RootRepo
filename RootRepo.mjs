@@ -137,6 +137,19 @@ class RootRepo {
             return null; // Return null if HEAD file does not exist
         }
     }
+
+    async log(){
+        let currentCommitHash = await this.getCurrentHead();
+
+        while(currentCommitHash) {
+            const commitData = JSON.parse(await fs.readFile(path.join(this.objectsPath, currentCommitHash.substring(0, 2), currentCommitHash.substring(2)), {encoding: 'utf-8'}));
+
+            console.log(`\nCommit: ${currentCommitHash}\nDate: ${commitData.timeStamp}\nMessage: ${commitData.message}`);
+
+            currentCommitHash = commitData.parent;
+        }
+    }
+
 }
 
 (async () => {
@@ -147,5 +160,8 @@ class RootRepo {
     await rootRepo.add('sample.txt');
     
     // Commit the staged file with a message
-    await rootRepo.commit('Initial commit');
+    await rootRepo.commit('Second commit');
+
+    // Log the commit history
+    await rootRepo.log();
 })();
