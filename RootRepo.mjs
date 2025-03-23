@@ -4,7 +4,7 @@ import crypto from 'crypto';
 
 class RootRepo {
 
-    constructor(repoPath = '.') {
+    constructor(repoPath = '.'){
         // Define the main .root directory where repository metadata will be stored
         this.repoPath = path.join(repoPath, '.root');
 
@@ -18,23 +18,19 @@ class RootRepo {
         this.indexPath = path.join(this.repoPath, 'index'); // .root/index
 
         // Initialize the repository (create necessary directories and files)
-        this.init().then(() => {
-            console.log("RootRepo initialized");
-        }).catch((error) => {
-            console.error("Failed to initialize RootRepo:", error.message);
-        });
+        this.ready = this.init();
     }
 
     async init() {
         // Ensure the objects directory exists
-        await fs.mkdir(this.objectsPath, { recursive: true });
+        await fs.mkdir(this.objectsPath, {recursive: true});
 
         try {
             // Create an empty HEAD file if it does not exist
-            await fs.writeFile(this.headPath, '', { flag: 'wx' }); // wx: open for writing, error if file exists
+            await fs.writeFile(this.headPath, '', {flag: 'wx'}); // wx: open for writing, error if file exists
 
             // Create an empty index file if it does not exist
-            await fs.writeFile(this.indexPath, JSON.stringify([]), { flag: 'wx' });
+            await fs.writeFile(this.indexPath, JSON.stringify([]), {flag: 'wx'});
 
             console.log("Initialized the .root folder");
         } catch (error) {
@@ -55,130 +51,101 @@ class RootRepo {
     }
 
     async add(fileToBeAdded) {
-        try {
-            // Ensure the file exists before proceeding
-            await fs.access(fileToBeAdded);
+        // Read the content of the file to be added
+        const fileData = await fs.readFile(fileToBeAdded, {encoding: 'utf-8'});
 
-            // Read file content
-            const fileData = await fs.readFile(fileToBeAdded, { encoding: 'utf-8' });
+        // Compute the SHA-256 hash of the file content
+        const fileHash = this.hashObject(fileData);
 
-            // Generate hash for the file content
-            const fileHash = this.hashObject(fileData);
+        console.log(fileHash);
 
-            console.log(`Hash for ${fileToBeAdded}: ${fileHash}`);
+        // Define the path where the hashed object will be stored inside the objects directory
+        const objectDir = path.join(this.objectsPath, fileHash.substring(0, 2)); // First two characters as directory
+        const objectFilePath = path.join(objectDir, fileHash.substring(2)); // Rest as filename
 
-            // Create a directory based on the first two characters of the hash
-            const objectDir = path.join(this.objectsPath, fileHash.substring(0, 2));
-            const objectFilePath = path.join(objectDir, fileHash.substring(2));
+        // Ensure the object directory exists
+        await fs.mkdir(objectDir, { recursive: true });
 
-            // Ensure the directory exists
-            await fs.mkdir(objectDir, { recursive: true });
+        // Write the original file content to the hashed object file inside .root/objects
+        await fs.writeFile(objectFilePath, fileData);
 
-            // Write the file content only if it is not already stored
-            try {
-                await fs.writeFile(objectFilePath, fileData, { flag: 'wx' });
-            } catch (error) {
-                if (error.code !== 'EEXIST') throw error; // Ignore if file already exists
-            }
+        // Update the staging area with the file path and hash
+        await this.updateStagingArea(fileToBeAdded, fileHash);
 
-            // Update staging area (index) with file information
-            await this.updateStagingArea(fileToBeAdded, fileHash);
-            console.log(`Added ${fileToBeAdded}`);
-        } catch (error) {
-            console.error(`Error adding ${fileToBeAdded}: ${error.message}`);
-        }
+        console.log(`Added ${fileToBeAdded}`);
     }
 
     async updateStagingArea(filePath, fileHash) {
         // Read the current index (staging area) from the index file
-        const index = JSON.parse(await fs.readFile(this.indexPath, { encoding: 'utf-8' }));
+        const index = JSON.parse(await fs.readFile(this.indexPath, {encoding: 'utf-8'}));
 
-        // Check if file still exists, otherwise remove it from the index
-        try {
-            await fs.access(filePath);
-            index.push({ path: filePath, hash: fileHash });
-        } catch {
-            console.log(`File ${filePath} deleted, removing from staging.`);
-        }
+        // Add the new file entry with its hash
+        index.push({ path: filePath, hash: fileHash });
 
-        // Write updated index back to the index file
-        await fs.writeFile(this.indexPath, JSON.stringify(index, null, 2));
+        // Write the updated index back to the file
+        await fs.writeFile(this.indexPath, JSON.stringify(index));
     }
 
     async commit(message) {
-        if (!message || !message.trim()) {
-            console.log("Commit message cannot be empty.");
-            return;
-        }
+        // Read the current staging area (index) before committing
+        const index = JSON.parse(await fs.readFile(this.indexPath, {encoding: 'utf-8'}));
 
-        // Read the current index (staging area)
-        const index = JSON.parse(await fs.readFile(this.indexPath, { encoding: 'utf-8' }));
-
-        // If nothing is staged, do not proceed with commit
+        // If no files are staged, prevent commit
         if (index.length === 0) {
-            console.log("Nothing to commit.");
+            console.log("Nothing to commit");
             return;
         }
-
-        // Get the hash of the latest commit
-        const parentCommit = await this.getCurrentHead();
-
-        // If the new commit has the same contents as the last commit, skip it
-        if (parentCommit) {
-            const parentCommitData = JSON.parse(
-                await fs.readFile(path.join(this.objectsPath, parentCommit.substring(0, 2), parentCommit.substring(2)), { encoding: 'utf-8' })
-            );
-
-            if (JSON.stringify(parentCommitData.files) === JSON.stringify(index)) {
-                console.log("No changes since last commit. Skipping commit.");
-                return;
-            }
-        }
-
-        // Create a commit object containing metadata and file changes
+        
+        // Get the parent commit hash from HEAD (if any)
+        const parentCommit = (await this.getCurrentHead()) || null;
+    
+        // Create a commit object containing timestamp, commit message, staged files, and parent commit reference
         const commitData = {
-            timeStamp: new Date().toISOString(),
-            message,
-            files: index,
-            parent: parentCommit
+            timeStamp: new Date().toISOString(), // Store the current time of commit
+            message, // Store the commit message provided by the user
+            filex: index, // Include the staged files from the index
+            parent: parentCommit // Reference the parent commit (empty if first commit)
         };
 
-        // Generate a hash for the commit
+        // Compute the commit hash using SHA-256
         const commitHash = this.hashObject(JSON.stringify(commitData));
 
-        // Create a directory based on the first two characters of the commit hash
-        const commitDir = path.join(this.objectsPath, commitHash.substring(0, 2));
+        // Define the commit file path
+        const commitDir = path.join(this.objectsPath, commitHash.substring(0, 2)); 
         const commitPath = path.join(commitDir, commitHash.substring(2));
 
-        // Store the commit data in the object storage
-        await fs.mkdir(commitDir, { recursive: true });
-        await fs.writeFile(commitPath, JSON.stringify(commitData, null, 2));
+        // Ensure the commit directory exists
+        await fs.mkdir(commitDir, {recursive: true});
 
-        // Update HEAD with the new commit hash
+        // Write the commit data to the commit file
+        await fs.writeFile(commitPath, JSON.stringify(commitData));
+
+        // Update HEAD to point to the new commit
         await fs.writeFile(this.headPath, commitHash);
 
-        // Clear the staging area after committing
+        // Clear the staging area after commit
         await fs.writeFile(this.indexPath, JSON.stringify([]));
 
         console.log(`Committed with hash: ${commitHash}`);
     }
-
-    async getCurrentHead() {
+    
+    async getCurrentHead(){
         try {
-            // Read the HEAD file to get the latest commit hash
-            const headContent = await fs.readFile(this.headPath, { encoding: 'utf-8' });
-            return headContent.trim() || null; // Return null if HEAD is empty
+            // Read the current HEAD file to get the latest commit hash
+            return await fs.readFile(this.headPath, {encoding: 'utf-8'});
         } catch (error) {
             return null; // Return null if HEAD file does not exist
         }
     }
 }
 
-// Run the script to initialize the repository and perform operations
 (async () => {
-    const rootRepo = new RootRepo(); // Initialize repository
-
-    await rootRepo.add('sample.txt'); // Add a file to staging area
-
-    await rootRepo.commit('Initial commit'); // Commit changes
+    // Create an instance of RootRepo
+    const rootRepo = new RootRepo();
+    
+    // Add a file to the staging area
+    await rootRepo.add('sample.txt');
+    
+    // Commit the staged file with a message
+    await rootRepo.commit('Initial commit');
 })();
