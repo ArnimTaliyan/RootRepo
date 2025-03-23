@@ -15,7 +15,7 @@ class RootRepo {
         this.headPath = path.join(this.repoPath, 'HEAD'); // .root/HEAD
 
          // Path to the index (staging area), which tracks changes before committing
-        this.indexPath = path.join(this.repoPath, 'index') // .root/index
+        this.indexPath = path.join(this.repoPath, 'index'); // .root/index
 
         this.init();
     }
@@ -62,9 +62,17 @@ class RootRepo {
         // Write the original file content to the hashed object file inside .root/objects
         await fs.writeFile(objectFilePath, fileData);
 
-        // One step missing: add the file to the staging area (index)
+        await this.updateStagingArea(fileToBeAdded, fileHash);
 
         console.log(`Added ${fileToBeAdded}`);
+    }
+
+    async updateStagingArea(filePath, fileHash) {
+        const index = JSON.parse(await fs.readFile(this.indexPath, 'utf-8')); // read index file
+
+        index.push({ path: filePath, hash: fileHash }); // add the new file to the index
+
+        await fs.writeFile(this.indexPath, JSON.stringify(index)); // write the updated index back to the file
     }
 }
 
