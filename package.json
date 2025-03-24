@@ -8,5 +8,18 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": ""
+  "description": "Creating Own VCS RootRepo",
+  "dependencies": {
+    "chalk": "^5.4.1",
+    "diff": "^7.0.0"
+  },
+  "devDependencies": {},
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ArnimTaliyan/RootRepo.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ArnimTaliyan/RootRepo/issues"
+  },
+  "homepage": "https://github.com/ArnimTaliyan/RootRepo#readme"
 }
