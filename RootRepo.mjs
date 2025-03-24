@@ -156,12 +156,9 @@ class RootRepo {
     // Create an instance of RootRepo
     const rootRepo = new RootRepo();
     
-    // Add a file to the staging area
     await rootRepo.add('sample.txt');
     
-    // Commit the staged file with a message
     await rootRepo.commit('Second commit');
 
-    // Log the commit history
     await rootRepo.log();
 })();
